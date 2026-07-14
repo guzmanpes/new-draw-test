@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Draw & Guess Party V3</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--blue:#1943d3;--navy:#07124f;--gold:#ffd84d;--cream:#f7f8ff;--ink:#11152e;--danger:#ff6b6b;--success:#24b47e}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Arial,Helvetica,sans-serif;background:radial-gradient(circle at top,#3459e0,#07104f 58%,#02051c);color:white}.hidden{display:none!important}
+header{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 18px;background:#020625e8}h1{margin:0;font-size:clamp(1.6rem,5vw,3rem);text-transform:uppercase}.actions{display:flex;gap:8px;flex-wrap:wrap}
+button,input,select{font:inherit}.btn{border:0;border-radius:11px;padding:11px 14px;font-weight:900;cursor:pointer}.primary{background:var(--gold)}.secondary{background:#dfe6ff;color:var(--navy)}.danger{background:var(--danger)}main{width:min(1180px,94vw);margin:20px auto 50px}.panel{background:var(--cream);color:var(--ink);border-radius:19px;padding:21px;margin-bottom:18px;box-shadow:0 18px 44px #0005}.notice{padding:12px;border-radius:11px;font-weight:900;margin-bottom:15px}.error{background:#ffd7d7;color:#720000}.success{background:#d9f7e9;color:#086844}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.cat{padding:14px;border:2px solid transparent;border-radius:12px;background:#e5e9ff;color:var(--navy);font-weight:900}.cat.active{background:var(--blue);color:white;border-color:var(--gold)}.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px}.option{background:#ebefff;border-radius:11px;padding:12px}.option label{display:block;font-weight:900;margin-bottom:6px}.option input,.option select{width:100%;padding:10px;border:1px solid #aab4dc;border-radius:9px;background:white}
+.room{display:grid;grid-template-columns:1fr 220px;gap:22px;align-items:center}.code{font-size:clamp(3rem,9vw,5.5rem);font-weight:900;color:var(--blue);letter-spacing:.13em}.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.player{background:#e6ebff;padding:10px;border-radius:10px;font-weight:900}.player.done{background:#d8f7e9;color:#087047}#qr{background:#fff;padding:10px;border-radius:12px;width:max-content;margin:auto}
+.game-head{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center}.round{font-size:clamp(1.8rem,5vw,3rem);font-weight:900;color:var(--navy)}.timer{width:112px;height:112px;border-radius:50%;display:grid;place-items:center;background:var(--blue);color:white;font-size:2rem;font-weight:900}.progress{height:17px;background:#dce2fa;border-radius:99px;overflow:hidden;margin-top:16px}.bar{height:100%;width:0;background:linear-gradient(90deg,var(--blue),#7187ff)}.entry{background:white;border:2px solid #c1caee;border-radius:14px;padding:15px;margin:14px 0}.entry-label{font-size:.8rem;color:var(--blue);text-transform:uppercase;font-weight:900}.entry-text{font-size:clamp(1.4rem,4vw,2.3rem);font-weight:900;margin-top:8px}.entry img{width:100%;max-height:430px;object-fit:contain;margin-top:9px;border-radius:9px}
+@media(max-width:700px){.room,.game-head{grid-template-columns:1fr}.timer{margin:auto}}
+</style>
+</head>
+<body>
+<header><div><h1>Draw & Guess Party V3</h1><div>Self-contained rebuild</div></div><div class="actions"><button class="btn secondary" id="testBtn">Test Firebase</button><button class="btn secondary" id="fullBtn">Full Screen</button><button class="btn danger hidden" id="endBtn">End Game</button></div></header>
+<main>
+<div id="message" class="notice hidden"></div>
+<section class="panel" id="setup"><h2>Choose a category</h2><div class="grid" id="categories"></div><div class="options"><div class="option"><label>Seconds per turn</label><input id="seconds" type="number" min="20" max="180" value="60"></div><div class="option"><label>Advance mode</label><select id="mode"><option value="manual">Host advances</option><option value="all">When everyone submits</option><option value="timer">When timer ends</option></select></div></div><div style="margin-top:16px"><button class="btn primary" id="createBtn">Create Game Room</button></div></section>
+<section class="panel hidden" id="lobby"><div class="room"><div><div>Room code</div><div class="code" id="roomCode"></div><div class="actions"><button class="btn secondary" id="copyBtn">Copy Player Link</button><button class="btn primary" id="startBtn">Start Game</button></div><h3>Players (<span id="playerCount">0</span>)</h3><div class="players" id="players"></div></div><div id="qr"></div></div></section>
+<section class="panel hidden" id="play"><div class="game-head"><div><div class="round" id="roundTitle"></div><div id="roundSub"></div></div><div class="timer" id="timer">60</div></div><div class="progress"><div class="bar" id="bar"></div></div><div id="submissionStatus" style="font-weight:900;margin-top:8px"></div><div class="players" id="submissionPlayers" style="margin-top:12px"></div><div class="actions" style="justify-content:center;margin-top:16px"><button class="btn secondary" id="pauseBtn">Pause</button><button class="btn secondary" id="addBtn">+15 Seconds</button><button class="btn primary" id="advanceBtn">Advance</button></div></section>
+<section class="panel hidden" id="reveal"><div class="actions" style="justify-content:space-between"><div><h2 id="revealTitle"></h2><div id="revealMeta"></div></div><div><button class="btn secondary" id="prevBtn">Previous</button><button class="btn primary" id="nextBtn">Next</button></div></div><div id="chain"></div></section>
+</main>
+<script>
+const FIREBASE_CONFIG = {"apiKey": "AIzaSyB3mwtYzoaRG2EB_eU7NmwjuG3-7TuVgs0", "authDomain": "new-draw.firebaseapp.com", "databaseURL": "https://new-draw-default-rtdb.firebaseio.com", "projectId": "new-draw", "storageBucket": "new-draw.firebasestorage.app", "messagingSenderId": "462574759617", "appId": "1:462574759617:web:0874c2591a54bfcecfae40"};
+const PROMPTS = {"Kids": ["Treehouse", "Lost tooth", "Water balloon", "Superhero cape", "Pillow fort", "Toy robot", "Ice cream truck", "Jump rope", "Birthday cake", "Flying kite", "Magic wand", "Treasure map", "Giant cupcake", "Invisible friend", "Backyard fort", "Pet dinosaur"], "Movies": ["Space adventure", "Secret agent", "Car chase", "Haunted house", "Time machine", "Giant monster", "Buried treasure", "Alien invasion", "Shipwreck", "Dragon battle", "Detective mystery", "Robot uprising", "Jungle expedition", "Superhero landing", "Mystery island", "Secret laboratory"], "Disney": ["Magic kingdom", "Talking animal", "Fairy godmother", "Royal ball", "Enchanted castle", "Magic carpet", "Glass slipper", "Wishing star", "Talking mirror", "Lost princess", "Friendly dragon", "Magical transformation", "Animal sidekick", "Royal coronation", "Magic spell", "Floating lanterns"], "Animals": ["Penguin dancing", "Cat in a box", "Dog chasing its tail", "Giraffe on roller skates", "Monkey eating a banana", "Elephant painting", "Owl reading a book", "Lion taking a nap", "Rabbit driving a car", "Bear fishing", "Octopus playing drums", "Turtle racing", "Panda cooking", "Sloth on vacation", "Seal playing soccer", "Parrot taking a selfie"], "Family": ["Family game night", "Road trip", "Backyard barbecue", "Movie night", "Family photo", "Camping trip", "Cooking together", "Birthday surprise", "Sunday breakfast", "Lost remote control", "Family talent show", "Group selfie", "Family karaoke", "Board game argument", "Packing the car", "Making pancakes"], "Disney Characters": ["Mickey Mouse", "Minnie Mouse", "Donald Duck", "Goofy", "Stitch", "Tinker Bell", "Winnie the Pooh", "Olaf", "Simba", "Ariel", "Belle", "Aladdin", "Buzz Lightyear", "Woody", "Moana", "Mulan"], "Disney Movies": ["The Lion King", "Frozen", "Toy Story", "Finding Nemo", "Aladdin", "Beauty and the Beast", "Moana", "Coco", "Encanto", "The Little Mermaid", "Mulan", "Cars", "Up", "Ratatouille", "Lilo & Stitch", "Tangled"], "Disney Songs": ["Let It Go", "Hakuna Matata", "Under the Sea", "A Whole New World", "We Don't Talk About Bruno", "You've Got a Friend in Me", "How Far I'll Go", "Be Our Guest", "Circle of Life", "Part of Your World", "You're Welcome", "Remember Me", "Into the Unknown", "Friend Like Me", "Almost There", "Surface Pressure"], "Disney Parks": ["Cinderella Castle", "Space Mountain", "Haunted Mansion", "Pirates of the Caribbean", "It's a Small World", "Dumbo the Flying Elephant", "Matterhorn", "Jungle Cruise", "Tower of Terror", "Main Street parade", "Fireworks over the castle", "Teacup ride", "Monorail", "Mickey balloon", "Churro cart", "Park map"], "Disney Villains": ["Maleficent", "Ursula", "Jafar", "Scar", "Captain Hook", "Cruella de Vil", "Hades", "The Evil Queen", "Gaston", "Dr. Facilier", "Mother Gothel", "Queen of Hearts", "Yzma", "Lady Tremaine", "Syndrome", "Oogie Boogie"]};
+(() => {
+  const $ = id => document.getElementById(id);
+  const message = (text, ok=false) => {
+    const box = $("message");
+    box.textContent = text;
+    box.className = "notice " + (ok ? "success" : "error");
+  };
+
+  let db;
+  try {
+    if (!window.firebase) throw new Error("Firebase library did not load. Check internet access.");
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+  } catch (error) {
+    message(error.message);
+    return;
+  }
+
+  let category="Kids",room="",ref=null,players={},order=[],submissions={},step=0,total=0,secondsLeft=60,timerId=null,paused=false,revealIndex=0,mode="manual",advancing=false;
+
+  Object.keys(PROMPTS).forEach(name => {
+    const b=document.createElement("button");
+    b.className="cat"+(name===category?" active":"");
+    b.textContent=name;
+    b.onclick=()=>{category=name;document.querySelectorAll(".cat").forEach(x=>x.classList.remove("active"));b.classList.add("active")};
+    $("categories").appendChild(b);
+  });
+
+  const randomCode=()=>{const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from({length:6},()=>chars[Math.floor(Math.random()*chars.length)]).join("")};
+  const playerUrl=()=>{const u=new URL("player.html",location.href);u.searchParams.set("room",room);return u.toString()};
+
+  $("testBtn").onclick=async()=>{
+    try {
+      const test=db.ref("connectionTests/"+Date.now());
+      await test.set({ok:true});
+      await test.remove();
+      message("Firebase connection works.",true);
+    } catch(error) { message("Firebase failed: "+error.message); }
+  };
+
+  function renderPlayers(){
+    const list=Object.entries(players).sort((a,b)=>(a[1].seat||0)-(b[1].seat||0));
+    $("playerCount").textContent=list.length;$("players").innerHTML="";
+    list.forEach(([id,p])=>{const e=document.createElement("div");e.className="player";e.textContent=p.name;$("players").appendChild(e)});
+  }
+
+  function renderSubmissions(){
+    const count=Object.keys(submissions).length;
+    $("submissionStatus").textContent=`${count} of ${order.length} submitted`;
+    $("bar").style.width=order.length?`${count/order.length*100}%`:"0%";
+    $("submissionPlayers").innerHTML="";
+    order.forEach(id=>{const e=document.createElement("div");e.className="player"+(submissions[id]?" done":"");e.textContent=`${players[id]?.name||"Player"} ${submissions[id]?"✓":"…"}`;$("submissionPlayers").appendChild(e)});
+    if(mode==="all"&&order.length&&count>=order.length)setTimeout(()=>advance(true),500);
+  }
+
+  function stopTimer(){if(timerId)clearInterval(timerId);timerId=null}
+  function resetTimer(){
+    stopTimer();paused=false;$("pauseBtn").textContent="Pause";secondsLeft=Number($("seconds").value)||60;$("timer").textContent=secondsLeft;
+    timerId=setInterval(()=>{if(paused)return;secondsLeft=Math.max(0,secondsLeft-1);$("timer").textContent=secondsLeft;if(secondsLeft===0){stopTimer();if(mode==="timer")advance(true)}},1000);
+  }
+  function updateRound(){$("roundTitle").textContent=`Pass ${step} of ${total}`;$("roundSub").textContent=step%2?"Everyone is drawing.":"Everyone is guessing.";$("advanceBtn").textContent=step>=total?"Reveal Chains":"Advance"}
+  function choosePrompts(n){let a=[...PROMPTS[category]].sort(()=>Math.random()-.5);while(a.length<n)a.push(...PROMPTS[category]);return a.slice(0,n)}
+
+  $("createBtn").onclick=async()=>{
+    try {
+      room=randomCode();mode=$("mode").value;ref=db.ref("drawGuessRooms/"+room);
+      await ref.set({active:true,phase:"lobby",category,seconds:Number($("seconds").value)||60,mode,createdAt:firebase.database.ServerValue.TIMESTAMP});
+      $("setup").classList.add("hidden");$("lobby").classList.remove("hidden");$("endBtn").classList.remove("hidden");$("roomCode").textContent=room;
+      $("qr").innerHTML="";new QRCode($("qr"),{text:playerUrl(),width:200,height:200});
+      ref.child("players").on("value",s=>{players=s.val()||{};renderPlayers()});
+      ref.child("submissions").on("value",s=>{submissions=s.val()||{};renderSubmissions()});
+      message("Room created.",true);
+    } catch(error) {message("Could not create room: "+error.message);}
+  };
+
+  $("copyBtn").onclick=async()=>{try{await navigator.clipboard.writeText(playerUrl());message("Player link copied.",true)}catch{prompt("Copy this link:",playerUrl())}};
+
+  $("startBtn").onclick=async()=>{
+    try {
+      order=Object.entries(players).sort((a,b)=>(a[1].seat||0)-(b[1].seat||0)).map(x=>x[0]);
+      if(order.length<3)return alert("At least 3 players are required.");
+      total=order.length;step=1;const words=choosePrompts(order.length),updates={phase:"play",order,totalSteps:total,step,stepStartedAt:firebase.database.ServerValue.TIMESTAMP,submissions:null};
+      order.forEach((id,i)=>{updates[`chains/${id}/ownerName`]=players[id].name;updates[`chains/${id}/entries/0`]={type:"word",content:words[i],author:"Game"}});
+      await ref.update(updates);$("lobby").classList.add("hidden");$("play").classList.remove("hidden");submissions={};updateRound();renderSubmissions();resetTimer();
+    } catch(error) {message("Could not start: "+error.message);}
+  };
+
+  async function advance(auto=false){
+    if(advancing)return;advancing=true;
+    try {
+      const count=Object.keys(submissions).length;
+      if(!auto&&count<order.length&&!confirm(`${count} of ${order.length} submitted. Continue?`))return;
+      if(step>=total){stopTimer();await ref.update({phase:"reveal"});$("play").classList.add("hidden");$("reveal").classList.remove("hidden");revealIndex=0;await renderChain();return;}
+      step++;submissions={};await ref.update({step,stepStartedAt:firebase.database.ServerValue.TIMESTAMP,submissions:null});updateRound();renderSubmissions();resetTimer();
+    } catch(error) {message("Could not advance: "+error.message);} finally {advancing=false;}
+  }
+
+  async function renderChain(){
+    const id=order[revealIndex],s=await ref.child("chains/"+id).once("value"),c=s.val()||{},entries=c.entries||{};
+    $("revealTitle").textContent=`${c.ownerName||"Player"}'s Chain`;$("revealMeta").textContent=`Chain ${revealIndex+1} of ${order.length}`;$("chain").innerHTML="";
+    Object.keys(entries).sort((a,b)=>Number(a)-Number(b)).forEach(k=>{const e=entries[k],box=document.createElement("div");box.className="entry";const label=document.createElement("div");label.className="entry-label";label.textContent=`${e.type} — ${e.author||""}`;box.appendChild(label);if(e.type==="drawing"){const img=document.createElement("img");img.src=e.content;box.appendChild(img)}else{const t=document.createElement("div");t.className="entry-text";t.textContent=e.content;box.appendChild(t)}$("chain").appendChild(box)});
+  }
+
+  $("advanceBtn").onclick=()=>advance(false);
+  $("pauseBtn").onclick=()=>{paused=!paused;$("pauseBtn").textContent=paused?"Resume":"Pause"};
+  $("addBtn").onclick=()=>{secondsLeft+=15;$("timer").textContent=secondsLeft};
+  $("nextBtn").onclick=()=>{revealIndex=(revealIndex+1)%order.length;renderChain()};
+  $("prevBtn").onclick=()=>{revealIndex=(revealIndex-1+order.length)%order.length;renderChain()};
+  $("fullBtn").onclick=async()=>{try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen()}catch{}};
+  $("endBtn").onclick=async()=>{if(ref&&confirm("End game?")){stopTimer();await ref.update({active:false});location.reload()}};
+})();
+</script>
+</body>
+</html>
